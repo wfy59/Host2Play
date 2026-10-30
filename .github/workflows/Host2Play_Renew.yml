@@ -8,7 +8,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   run-first:
@@ -18,6 +18,9 @@ jobs:
       success: ${{ steps.renew_run.outcome == 'success' && 'true' || 'false' }}
 
     steps:
+      - name: 记录开始时间
+        run: echo "START_TS=$(date -u +%s)" >> "$GITHUB_ENV"
+
       - name: 拉取仓库
         uses: actions/checkout@v4
 
@@ -72,6 +75,41 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      - name: 写入本次运行时间并推送
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          JOB_LABEL: 首次执行
+        run: |
+          TZ=Asia/Shanghai
+          export TZ
+          END_TS=$(date +%s)
+          START_TS=${START_TS:-$END_TS}
+          DURATION=$((END_TS - START_TS))
+          START_LOCAL=$(date -d "@$START_TS" +"%Y-%m-%d %H:%M:%S")
+          END_LOCAL=$(date -d "@$END_TS" +"%Y-%m-%d %H:%M:%S")
+
+          cat > run_time_host2play.txt <<EOF
+          最近一次运行
+          阶段: ${JOB_LABEL}
+          开始时间: ${START_LOCAL} (Asia/Shanghai)
+          结束时间: ${END_LOCAL} (Asia/Shanghai)
+          耗时: ${DURATION} 秒
+          结果: ${JOB_STATUS}
+          运行编号: ${{ github.run_number }}
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add run_time_host2play.txt
+          if git diff --cached --quiet; then
+            echo "文件无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore: 更新 Host2Play 最近一次运行时间 [skip ci]"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
   run-retry:
     name: 重试执行
     runs-on: ubuntu-latest
@@ -79,9 +117,12 @@ jobs:
     if: always() && needs.run-first.outputs.success == 'false'
     permissions:
       actions: write
-      contents: read
+      contents: write
 
     steps:
+      - name: 记录开始时间
+        run: echo "START_TS=$(date -u +%s)" >> "$GITHUB_ENV"
+
       - name: 等待 60 秒（让 IP 封锁冷却）
         run: sleep 60
 
@@ -137,6 +178,41 @@ jobs:
           path: output/screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: 写入本次运行时间并推送
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          JOB_LABEL: 重试执行
+        run: |
+          TZ=Asia/Shanghai
+          export TZ
+          END_TS=$(date +%s)
+          START_TS=${START_TS:-$END_TS}
+          DURATION=$((END_TS - START_TS))
+          START_LOCAL=$(date -d "@$START_TS" +"%Y-%m-%d %H:%M:%S")
+          END_LOCAL=$(date -d "@$END_TS" +"%Y-%m-%d %H:%M:%S")
+
+          cat > run_time_host2play.txt <<EOF
+          最近一次运行
+          阶段: ${JOB_LABEL}
+          开始时间: ${START_LOCAL} (Asia/Shanghai)
+          结束时间: ${END_LOCAL} (Asia/Shanghai)
+          耗时: ${DURATION} 秒
+          结果: ${JOB_STATUS}
+          运行编号: ${{ github.run_number }}
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add run_time_host2play.txt
+          if git diff --cached --quiet; then
+            echo "文件无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore: 更新 Host2Play 最近一次运行时间 [skip ci]"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}"
 
       - name: 清理历史运行记录
         if: always()
